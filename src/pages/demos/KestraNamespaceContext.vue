@@ -1,7 +1,14 @@
 <script setup>
 import { computed, ref } from "vue";
 import { message, theme } from "ant-design-vue";
-import { ApiOutlined, DatabaseOutlined, KeyOutlined, TagsOutlined } from "@ant-design/icons-vue";
+import {
+  ApiOutlined,
+  CopyOutlined,
+  DatabaseOutlined,
+  KeyOutlined,
+  PlayCircleOutlined,
+  TagsOutlined
+} from "@ant-design/icons-vue";
 import { parse as parseYaml } from "yaml";
 
 const query = ref("");
@@ -257,6 +264,10 @@ async function onClickItem(item) {
   } catch {
     message.error("Failed to copy", 1.5);
   }
+}
+
+function setExpressionFromItem(item) {
+  expression.value = pebbleExpressionForItem(item);
 }
 
 function matches(item) {
@@ -588,6 +599,19 @@ applyFlowYaml();
                       <span v-if="dataRef.value" :class="valueClassForType(dataRef.type)">
                         {{ dataRef.value }}
                       </span>
+                      <button type="button" class="node-copy" @click.stop="onClickItem(dataRef)">
+                        <CopyOutlined />
+                      </button>
+                    </span>
+                    <span class="node-actions">
+                      <button
+                        type="button"
+                        class="node-action node-action--render"
+                        @click.stop="setExpressionFromItem(dataRef)"
+                      >
+                        <PlayCircleOutlined />
+                        <span>Render</span>
+                      </button>
                     </span>
                   </div>
                 </template>
@@ -740,6 +764,79 @@ applyFlowYaml();
 
 .node-name.item:hover {
   color: rgba(255, 255, 255, 0.95);
+}
+
+.node-copy {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  padding: 2px;
+  margin-left: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+  pointer-events: none;
+}
+
+.node-row:hover .node-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.node-copy:hover {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.node-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+}
+
+.node-row:hover .node-actions {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.node-action {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 20, 36, 0.6);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.node-action:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(30, 38, 60, 0.7);
+}
+
+.node-action--render {
+  color: rgba(177, 197, 255, 0.95);
+  border-color: rgba(143, 170, 255, 0.5);
+  background: rgba(37, 47, 80, 0.7);
+}
+
+.node-action--render:hover {
+  border-color: rgba(143, 170, 255, 0.85);
+  color: rgba(205, 218, 255, 0.98);
 }
 
 .type-icon {
