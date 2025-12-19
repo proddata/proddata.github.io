@@ -1,5 +1,4 @@
 :root {
-  color-scheme: light dark;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
     Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
   line-height: 1.5;
@@ -8,41 +7,22 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(1200px circle at 10% 10%, #1d1d30, transparent),
+  background: radial-gradient(1200px circle at 10% 10%, #162048, transparent),
     radial-gradient(900px circle at 90% 20%, #1f3b3b, transparent),
     radial-gradient(900px circle at 40% 90%, #3a1b2c, transparent),
     #0b0b10;
-  color: #eaeaf0;
 }
 
-.container {
-  max-width: 860px;
-  padding: 56px 20px;
-  margin: 0 auto;
+.ant-layout,
+.ant-layout-content {
+  background: transparent;
 }
 
-.header h1 {
-  margin: 0 0 8px;
-  font-size: 42px;
-  letter-spacing: -0.02em;
-}
-
-.sub {
-  margin: 0;
-  color: #b7b7c8;
-}
-
-.card {
+.ant-card.card {
   margin-top: 28px;
-  padding: 18px 18px 14px;
-  border-radius: 14px;
-  background: color-mix(in oklab, #0b0b10 70%, #ffffff 5%);
-  border: 1px solid color-mix(in oklab, #ffffff 20%, #0b0b10);
-}
-
-.card h2 {
-  margin: 0 0 10px;
-  font-size: 18px;
+  background: rgba(11, 11, 16, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
 }
 
 code {
@@ -51,11 +31,5 @@ code {
   font-size: 0.95em;
   padding: 0 6px;
   border-radius: 8px;
-  background: color-mix(in oklab, #ffffff 12%, transparent);
+  background: rgba(255, 255, 255, 0.12);
 }
-
-.footer {
-  margin-top: 44px;
-  color: #9a9ab2;
-}
-

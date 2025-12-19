@@ -1,6 +1,8 @@
 # proddata.github.io
 
-Simple Vue (Vite) site deployed to GitHub Pages via GitHub Actions.
+Simple Vue (Vite) site using Ant Design Vue, deployed to GitHub Pages via GitHub Actions.
+
+This repo is intended as a hub for small PoCs and demo pages; the home page links to each demo.
 
 ## Local dev
 
