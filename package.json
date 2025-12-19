@@ -12,7 +12,8 @@
     "@ant-design/icons-vue": "^7.0.1",
     "ant-design-vue": "^4.2.6",
     "vue": "^3.4.38",
-    "vue-router": "^4.5.0"
+    "vue-router": "^4.5.0",
+    "yaml": "^2.6.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.1.4",

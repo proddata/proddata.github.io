@@ -1,7 +1,8 @@
 <script setup>
 import { computed, ref } from "vue";
-import { theme } from "ant-design-vue";
+import { message, theme } from "ant-design-vue";
 import { ApiOutlined, DatabaseOutlined, KeyOutlined, TagsOutlined } from "@ant-design/icons-vue";
+import { parse as parseYaml } from "yaml";
 
 const query = ref("");
 const groupBy = ref("namespace");
@@ -13,14 +14,21 @@ const initialInventory = [
     category: "Variables",
     items: [
       {
-        key: "warehouse_destination",
-        value: "SNOWFLAKE_PROD",
-        namespace: "prod.analytics"
+        key: "postgres",
+        value: {
+          hostname: "my-postgres-prod-hostname",
+          port: 5432,
+          username: "my-postgres-prod-username"
+        },
+        namespace: "prod"
       },
       {
-        key: "default_timezone",
-        value: "Europe/Vienna",
-        namespace: "prod.analytics.ingest"
+        key: "dataLake",
+        value: {
+          s3BucketName: "my-datalake-s3-bucket-name",
+          region: "us-east-1"
+        },
+        namespace: "prod.analytics"
       }
     ]
   },
@@ -60,19 +68,134 @@ const inventoryJson = ref(JSON.stringify(initialInventory, null, 2));
 const inventoryError = ref("");
 const inventoryModel = ref(JSON.parse(JSON.stringify(initialInventory)));
 
-const typeOptions = computed(() => inventoryModel.value.map((g) => g.category));
+const flowYaml = ref(`id: guanaco_434139
+namespace: prod.analytics
+
+inputs:
+  - id: my_input
+    type: STRING
+    default: Hello
+
+variables:
+  my_flow_var: 123
+  my_flow_object:
+    complex: Hello
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: "Hello World! 🚀 {{ namespace.test_var }}"`);
+const flowError = ref("");
+const flowModel = ref(null);
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function applyFlowYaml() {
+  try {
+    const parsed = parseYaml(flowYaml.value);
+    if (!parsed || typeof parsed !== "object") throw new Error("Flow must be a YAML object.");
+    flowModel.value = parsed;
+    flowError.value = "";
+  } catch (err) {
+    flowError.value = err instanceof Error ? err.message : String(err);
+    flowModel.value = null;
+  }
+}
+
+const flowGroups = computed(() => {
+  if (!flowModel.value) return [];
+
+  const inputs = Array.isArray(flowModel.value.inputs) ? flowModel.value.inputs : [];
+  const variables = isPlainObject(flowModel.value.variables) ? flowModel.value.variables : {};
+
+  const flowVariableItems = Object.entries(variables).map(([key, value]) => ({
+    key,
+    value,
+    namespace: "flow.variables",
+    source: "flow"
+  }));
+
+  return [
+    {
+      category: "Flow Inputs",
+      items: inputs
+        .filter((i) => i && typeof i === "object" && typeof i.id === "string")
+        .map((i) => ({
+          key: i.id,
+          value: i.default ?? "",
+          namespace: "flow.inputs"
+        }))
+    },
+    {
+      category: "Variables",
+      items: flowVariableItems
+    }
+  ];
+});
+
+const combinedModel = computed(() => {
+  const base = inventoryModel.value.map((g) => ({ ...g, items: [...g.items] }));
+  const extraGroups = flowGroups.value;
+
+  const byCategory = new Map(base.map((g) => [g.category, g]));
+  for (const g of extraGroups) {
+    if (!byCategory.has(g.category)) {
+      byCategory.set(g.category, { category: g.category, items: [] });
+      base.push(byCategory.get(g.category));
+    }
+    byCategory.get(g.category).items.push(...g.items);
+  }
+
+  return base;
+});
+
+const typeOptions = computed(() => {
+  const preferred = ["Flow Inputs", "Variables", "KV Pairs", "Secrets"];
+  const all = new Set(combinedModel.value.map((g) => g.category));
+  const ordered = preferred.filter((t) => all.has(t));
+  for (const t of Array.from(all).sort((a, b) => a.localeCompare(b))) {
+    if (!ordered.includes(t)) ordered.push(t);
+  }
+  return ordered;
+});
+
+const enabledTypes = ref(["Flow Inputs", "Variables", "KV Pairs", "Secrets"]);
 
 function iconForType(type) {
   if (type === "Secrets") return KeyOutlined;
   if (type === "Variables") return ApiOutlined;
   if (type === "KV Pairs") return DatabaseOutlined;
+  if (type === "Flow Inputs") return TagsOutlined;
   return TagsOutlined;
+}
+
+const legend = [
+  { type: "Flow Inputs", label: "Flow inputs" },
+  { type: "Variables", label: "Variables" },
+  { type: "KV Pairs", label: "KV pairs" },
+  { type: "Secrets", label: "Secrets" }
+];
+
+function isTypeEnabled(type) {
+  return enabledTypes.value.includes(type);
+}
+
+function toggleType(type) {
+  const current = enabledTypes.value;
+  if (current.includes(type)) {
+    enabledTypes.value = current.filter((t) => t !== type);
+  } else {
+    enabledTypes.value = [...current, type];
+  }
 }
 
 function valueClassForType(type) {
   if (type === "Secrets") return "value value--secret";
   if (type === "Variables") return "value value--variable";
   if (type === "KV Pairs") return "value value--kv";
+  if (type === "Flow Inputs") return "value value--flow-input";
   return "value";
 }
 
@@ -83,13 +206,72 @@ function maskedSecret(value) {
   return `${s.slice(0, 3)}••••••${s.slice(-3)}`;
 }
 
+function pebbleExpressionForItem(item) {
+  const key = item.name;
+  const ns = item.namespace;
+
+  if (item.type === "KV Pairs") {
+    return `{{ kv('${key}', '${ns}') }}`;
+  }
+
+  if (item.type === "Variables") {
+    if (item.source === "flow") {
+      return `{{ vars.${item.path ?? key} }}`;
+    }
+    return `{{ namespace.${item.path ?? key} }}`;
+  }
+
+  if (item.type === "Secrets") {
+    return `{{ secret('${key}') }}`;
+  }
+
+  if (item.type === "Flow Inputs") {
+    return `{{ inputs.${key} }}`;
+  }
+
+  return `{{ ${ns}.${key} }}`;
+}
+
+async function copyToClipboard(text) {
+  if (navigator?.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "absolute";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
+async function onClickItem(item) {
+  try {
+    const expr = pebbleExpressionForItem(item);
+    await copyToClipboard(expr);
+    message.success("Copied to clipboard", 1.2);
+  } catch {
+    message.error("Failed to copy", 1.5);
+  }
+}
+
 function matches(item) {
   const q = query.value.trim().toLowerCase();
   if (!q) return true;
+  const valueText =
+    typeof item.value === "string"
+      ? item.value
+      : item.value == null
+        ? ""
+        : JSON.stringify(item.value);
   return (
     String(item.key).toLowerCase().includes(q) ||
     String(item.namespace).toLowerCase().includes(q) ||
-    String(item.value ?? "").toLowerCase().includes(q)
+    String(valueText).toLowerCase().includes(q)
   );
 }
 
@@ -122,6 +304,69 @@ function applyInventory() {
   }
 }
 
+function buildVariableNodes(it, keyPrefix, parentPath = "") {
+  const basePath = parentPath ? `${parentPath}.${it.key}` : it.key;
+  const nodeKey = `${keyPrefix}var:${it.namespace}:${basePath}`;
+
+  if (!isPlainObject(it.value)) {
+    return [
+      {
+        key: nodeKey,
+        isLeaf: true,
+        nodeType: "item",
+        type: it.type,
+        source: it.source,
+        namespace: it.namespace,
+        name: it.key,
+        path: basePath,
+        value: String(it.value ?? "")
+      }
+    ];
+  }
+
+  const children = [];
+  for (const [childKey, childValue] of Object.entries(it.value)) {
+    const childPath = `${basePath}.${childKey}`;
+    if (isPlainObject(childValue)) {
+      children.push(
+        ...buildVariableNodes(
+          { ...it, key: childKey, value: childValue },
+          keyPrefix,
+          basePath
+        )
+      );
+    } else {
+      children.push({
+        key: `${keyPrefix}var:${it.namespace}:${childPath}`,
+        isLeaf: true,
+        nodeType: "item",
+        type: it.type,
+        source: it.source,
+        namespace: it.namespace,
+        name: childKey,
+        path: childPath,
+        value: String(childValue)
+      });
+    }
+  }
+  children.sort((a, b) => a.name.localeCompare(b.name));
+
+  return [
+    {
+      key: nodeKey,
+      nodeType: "item",
+      type: it.type,
+      source: it.source,
+      namespace: it.namespace,
+      name: it.key,
+      path: basePath,
+      selectable: false,
+      isLeaf: false,
+      children
+    }
+  ];
+}
+
 function buildNamespaceTree(items, keyPrefix = "") {
   const root = { children: new Map(), items: [] };
 
@@ -141,18 +386,26 @@ function buildNamespaceTree(items, keyPrefix = "") {
       const child = node.children.get(seg);
       const currentPath = path ? `${path}.${seg}` : seg;
 
-      const itemNodes = child.items
-        .slice()
-        .sort((a, b) => a.key.localeCompare(b.key))
-        .map((it) => ({
+      const itemNodes = [];
+      const sortedItems = child.items.slice().sort((a, b) => a.key.localeCompare(b.key));
+      for (const it of sortedItems) {
+        if (it.type === "Variables") {
+          itemNodes.push(...buildVariableNodes(it, `${keyPrefix}item:`));
+          continue;
+        }
+
+        itemNodes.push({
           key: `${keyPrefix}item:${it.type}:${it.namespace}:${it.key}`,
           title: it.key,
           isLeaf: true,
           nodeType: "item",
           type: it.type,
+          source: it.source,
+          namespace: it.namespace,
           name: it.key,
-          value: it.type === "Secrets" ? maskedSecret(it.value) : it.value
-        }));
+          value: it.type === "Secrets" ? maskedSecret(it.value) : String(it.value ?? "")
+        });
+      }
 
       return {
         key: `${keyPrefix}ns:${currentPath}`,
@@ -186,14 +439,16 @@ function buildTypeThenNamespaceTree(items) {
 }
 
 const treeData = computed(() => {
-  const enriched = inventoryModel.value.flatMap((g) =>
+  const enriched = combinedModel.value.flatMap((g) =>
     g.items.map((it) => ({ ...it, type: g.category }))
   );
-  const filtered = enriched.filter((it) => matches(it));
+  const filtered = enriched.filter((it) => enabledTypes.value.includes(it.type) && matches(it));
   return groupBy.value === "type"
     ? buildTypeThenNamespaceTree(filtered)
     : buildNamespaceTree(filtered);
 });
+
+applyFlowYaml();
 </script>
 
 <template>
@@ -237,18 +492,36 @@ const treeData = computed(() => {
             <a-textarea
               v-model:value="inventoryJson"
               class="code"
-              :auto-size="{ minRows: 18, maxRows: 26 }"
+              :auto-size="{ minRows: 18, maxRows: 18 }"
               spellcheck="false"
             />
 
             <a-alert v-if="inventoryError" type="error" show-icon :message="inventoryError" />
+
+            <a-divider class="divider" />
+
+            <div class="panel-header">
+              <a-typography-text style="color: rgba(255, 255, 255, 0.82)">
+                Flow (YAML)
+              </a-typography-text>
+              <a-button @click="applyFlowYaml">Apply</a-button>
+            </div>
+
+            <a-textarea
+              v-model:value="flowYaml"
+              class="code"
+              :auto-size="{ minRows: 14, maxRows: 22 }"
+              spellcheck="false"
+            />
+
+            <a-alert v-if="flowError" type="error" show-icon :message="flowError" />
           </a-space>
         </section>
 
         <section class="panel content">
           <a-space direction="vertical" size="small" style="width: 100%">
             <a-typography-title :level="5" style="margin: 0; color: rgba(255, 255, 255, 0.9)">
-              Context
+              New Namespace Context Tab
             </a-typography-title>
 
             <a-space direction="vertical" size="small" style="width: 100%">
@@ -269,6 +542,22 @@ const treeData = computed(() => {
             </a-space>
 
             <a-input v-model:value="query" placeholder="Filter" allow-clear size="large" />
+
+            <div class="legend">
+              <a-space :size="10" wrap>
+                <button
+                  v-for="item in legend"
+                  :key="item.type"
+                  type="button"
+                  class="legend-item"
+                  :class="{ 'legend-item--off': !isTypeEnabled(item.type) }"
+                  @click="toggleType(item.type)"
+                >
+                  <component :is="iconForType(item.type)" class="legend-icon" />
+                  <span>{{ item.label }}</span>
+                </button>
+              </a-space>
+            </div>
 
             <div class="tree-container">
               <a-tree
@@ -293,10 +582,10 @@ const treeData = computed(() => {
                   </div>
 
                   <div v-else class="node-row">
-                    <span class="node-name">
+                    <span class="node-name item" @click.stop="onClickItem(dataRef)">
                       <component :is="iconForType(dataRef.type)" class="type-icon" />
                       <span>{{ dataRef.name }}</span>
-                      <span :class="valueClassForType(dataRef.type)">
+                      <span v-if="dataRef.value" :class="valueClassForType(dataRef.type)">
                         {{ dataRef.value }}
                       </span>
                     </span>
@@ -358,6 +647,10 @@ const treeData = computed(() => {
   background: #4e5058ff;
 }
 
+.panel.content {
+  box-shadow: 0px 25px 60px rgba(255, 255, 255, 0.12);
+}
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -380,6 +673,32 @@ const treeData = computed(() => {
 
 .tree-container :deep(.ant-tree) {
   background: var(--tree-bg);
+}
+
+.legend {
+  margin-top: 6px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+
+.legend-icon {
+  font-size: 14px;
+  color: rgba(143, 170, 255, 1);
+}
+
+.legend-item--off {
+  opacity: 0.45;
 }
 
 .filters-row {
@@ -413,6 +732,14 @@ const treeData = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.node-name.item {
+  cursor: pointer;
+}
+
+.node-name.item:hover {
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .type-icon {

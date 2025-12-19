@@ -4,7 +4,7 @@ import { computed } from "vue";
 const demos = [
   {
     key: "kestra-namespace-context",
-    title: "Kestra Flow Editor — Namespace Context tab (mockup)",
+    title: "Flow Editor — New Namespace Context tab",
     description:
       "Shows variables, KV pairs, and secrets accessible to a flow for a given namespace.",
     tags: ["kestra", "editor", "mockup"],
