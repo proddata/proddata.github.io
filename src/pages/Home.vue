@@ -3,12 +3,28 @@ import { computed } from "vue";
 
 const demos = [
   {
+    key: "kestra-oauth-credential-form",
+    title: "Credentials — OAuth2 credential form",
+    description:
+      "POC for creating OAuth2 credentials (client credentials + JWT bearer) and exporting a canonical JSON model.",
+    tags: ["kestra", "credentials", "poc"],
+    to: { name: "kestra-oauth-credential-form" }
+  },
+  {
     key: "kestra-namespace-context",
     title: "Flow Editor — New Namespace Context tab",
     description:
       "Shows variables, KV pairs, and secrets accessible to a flow for a given namespace.",
     tags: ["kestra", "editor", "mockup"],
     to: { name: "kestra-namespace-context" }
+  },
+  {
+    key: "kestra-task-level-properties",
+    title: "Flow Editor — Task level properties",
+    description:
+      "Proof of concept for rendering task property inputs by type, required flag, and group.",
+    tags: ["kestra", "editor", "poc"],
+    to: { name: "kestra-task-level-properties" }
   }
 ];
 
